@@ -5,7 +5,12 @@ import { getRecords } from "./servises/recordsAPI.js";
 const records = ref([]);
 
 onMounted(async () => {
-  records.value = await getRecords();
+  try {
+    records.value = await getRecords();
+    console.log("Records loaded:", records.value);
+  } catch (error) {
+    console.error("Error fetching records:", error);
+  }
 });
 </script>
 
@@ -15,7 +20,10 @@ onMounted(async () => {
   </header>
 
   <main>
-    <table>
+    <div v-if="records.length === 0" style="padding: 2rem; text-align: center; color: #888;">
+      Loading or no records found...
+    </div>
+    <table v-else>
       <thead>
         <tr>
           <th>ID</th>
