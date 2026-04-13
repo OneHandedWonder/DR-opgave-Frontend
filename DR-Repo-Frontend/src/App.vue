@@ -1,19 +1,44 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
-import TheWelcome from './components/TheWelcome.vue'
+import { ref, onMounted } from "vue";
+import { getRecords } from "./servises/recordsAPI.js";
+
+const records = ref([]);
+
+onMounted(async () => {
+  records.value = await getRecords();
+});
 </script>
 
 <template>
   <header>
-    <img alt="Vue logo" class="logo" src="./assets/logo.svg" width="125" height="125" />
-
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-    </div>
+    <h1>Records</h1>
   </header>
 
   <main>
-    <TheWelcome />
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Artist</th>
+          <th>Genre</th>
+          <th>Release Year</th>
+          <th>Tracks</th>
+          <th>Duration (s)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="record in records" :key="record.id">
+          <td>{{ record.id }}</td>
+          <td>{{ record.name }}</td>
+          <td>{{ record.artist }}</td>
+          <td>{{ record.genre }}</td>
+          <td>{{ record.releaseYear }}</td>
+          <td>{{ record.trackCount }}</td>
+          <td>{{ record.duration }}</td>
+        </tr>
+      </tbody>
+    </table>
   </main>
 </template>
 
