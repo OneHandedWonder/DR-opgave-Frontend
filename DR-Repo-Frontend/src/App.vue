@@ -1,19 +1,52 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
-import TheWelcome from './components/TheWelcome.vue'
+import { ref, onMounted } from "vue";
+import { getRecords } from "./servises/recordsAPI.js";
+
+const records = ref([]);
+
+onMounted(async () => {
+  try {
+    records.value = await getRecords();
+    console.log("Records loaded:", records.value);
+  } catch (error) {
+    console.error("Error fetching records:", error);
+  }
+});
 </script>
 
 <template>
   <header>
-    <img alt="Vue logo" class="logo" src="./assets/logo.svg" width="125" height="125" />
-
-    <div class="wrapper">
-      <HelloWorld msg="You did it!" />
-    </div>
+    <h1>Records</h1>
   </header>
 
   <main>
-    <TheWelcome />
+    <div v-if="records.length === 0" style="padding: 2rem; text-align: center; color: #888;">
+      Loading or no records found...
+    </div>
+    <table v-else>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Name</th>
+          <th>Artist</th>
+          <th>Genre</th>
+          <th>Release Year</th>
+          <th>Tracks</th>
+          <th>Duration (s)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="record in records" :key="record.id">
+          <td>{{ record.id }}</td>
+          <td>{{ record.name }}</td>
+          <td>{{ record.artist }}</td>
+          <td>{{ record.genre }}</td>
+          <td>{{ record.releaseYear }}</td>
+          <td>{{ record.trackCount }}</td>
+          <td>{{ record.duration }}</td>
+        </tr>
+      </tbody>
+    </table>
   </main>
 </template>
 
