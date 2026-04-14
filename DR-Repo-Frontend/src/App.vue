@@ -1,11 +1,16 @@
 <script setup>
-import { ref, onMounted, computed, reactive } from 'vue'
+import { ref, onMounted, onUnmounted, computed, reactive } from 'vue'
 import { getRecords, createRecord, updateRecord, deleteRecord } from './services/RecordsAPI.js'
 import { login, logout } from './services/Auth.js'
+import { getCurrentTrack, getNowPlayingOverview } from './services/RadioAPI.js'
 import './stylesheet.css'
 const records = ref([])
 const loading = ref(true)
 const error = ref(null)
+const radioNowPlaying = ref([])
+const radioLoading = ref(true)
+const radioError = ref(null)
+const radioUpdatedAt = ref(null)
 const authUser = ref(localStorage.getItem('dr-user') || '')
 const token = ref(localStorage.getItem('dr-token') || '')
 const signInName = ref('')
@@ -19,11 +24,41 @@ const sortBy = ref('id')
 const sortOrder = ref('asc')
 const showForm = ref(false)
 const editingId = ref(null)
+const radioStations = [
+  { label: 'P1', slug: 'p1' },
+  { label: 'P2', slug: 'p2' },
+  { label: 'P3', slug: 'p3' },
+  { label: 'P4', slug: 'p4kbh' },
+  { label: 'P5', slug: 'p5kbh' },
+  { label: 'P6', slug: 'p6beat' },
+]
+let radioRefreshTimer = null
 
 const emptyForm = () => ({ name: '', artist: '', genre: '', releaseYear: '', trackCount: '', duration: '' })
 const form = reactive(emptyForm())
 
 const isSignedIn = computed(() => Boolean(token.value))
+
+const prettyChannelName = (slug) => `P${slug.replace(/^p/i, '')}`
+
+const displayTrackTitle = (track, programTitle) => {
+  if (!track) return programTitle || 'Ukendt program'
+  return track.replace(/^\/?\s*/, '').trim()
+}
+
+const radioCards = computed(() => {
+  return radioStations.map((station) => {
+    const item = radioNowPlaying.value.find((entry) => entry.channelSlug === station.slug)
+    return {
+      channelSlug: station.slug,
+      channelTitle: station.label,
+      programTitle: item?.programTitle || 'Ukendt program',
+      currentTrack: item?.currentTrack || null,
+      displayTrack: displayTrackTitle(item?.currentTrack, item?.programTitle),
+      matchedMetadata: item?.matchedMetadata || null,
+    }
+  })
+})
 
 const filteredAndSortedRecords = computed(() => {
   const text = filterText.value.trim().toLowerCase()
@@ -71,6 +106,71 @@ async function fetchRecords() {
   } finally {
     loading.value = false
   }
+}
+
+async function fetchRadioNowPlaying() {
+  radioLoading.value = true
+  radioError.value = null
+  try {
+    const overview = await getNowPlayingOverview()
+    const overviewMap = new Map(
+      overview.map((item) => [item.channelSlug, item]),
+    )
+
+    const settled = await Promise.allSettled(
+      radioStations.map(async (station) => {
+        const base = overviewMap.get(station.slug)
+        const data = await getCurrentTrack(station.slug)
+        return {
+          channelSlug: station.slug,
+          channelTitle: data?.channelTitle || base?.channelTitle || station.label,
+          programTitle: data?.programTitle || base?.nowPlaying?.title || base?.programTitle || 'Ukendt program',
+          currentTrack: data?.currentTrack || null,
+          matchedMetadata: data?.matchedMetadata || null,
+        }
+      }),
+    )
+
+    const results = settled.map((result, index) => {
+      const station = radioStations[index]
+      const channelSlug = station.slug
+      const base = overviewMap.get(channelSlug)
+
+      if (result.status === 'fulfilled') {
+        return result.value
+      }
+
+      console.error(`Error fetching radio data for ${channelSlug}:`, result.reason)
+      return {
+        channelSlug,
+        channelTitle: base?.channelTitle || station.label,
+        programTitle: base?.nowPlaying?.title || 'Ukendt program',
+        currentTrack: null,
+        matchedMetadata: null,
+      }
+    })
+
+    radioNowPlaying.value = results
+    radioUpdatedAt.value = new Date()
+  } catch (e) {
+    radioError.value = 'Kunne ikke hente aktuelle numre fra DR.'
+    console.error('Error fetching radio now playing:', e)
+  } finally {
+    radioLoading.value = false
+  }
+}
+
+function startRadioPolling() {
+  if (radioRefreshTimer) return
+  radioRefreshTimer = window.setInterval(() => {
+    fetchRadioNowPlaying()
+  }, 120000)
+}
+
+function stopRadioPolling() {
+  if (!radioRefreshTimer) return
+  window.clearInterval(radioRefreshTimer)
+  radioRefreshTimer = null
 }
 
 async function signIn() {
@@ -184,11 +284,18 @@ async function removeRecord(id) {
 
 
 onMounted(() => {
+  fetchRadioNowPlaying()
+  startRadioPolling()
+
   if (token.value) {
     fetchRecords()
   } else {
     loading.value = false
   }
+})
+
+onUnmounted(() => {
+  stopRadioPolling()
 })
 </script>
 
@@ -211,6 +318,29 @@ onMounted(() => {
           <button v-if="isSignedIn" @click="signOut" class="btn-outline">Log ud</button>
         </div>
       </header>
+
+      <section class="now-playing-banner" aria-label="Aktuelt på DR">
+        <div class="now-playing-header">
+          <div>
+            <p class="eyebrow">Live på DR</p>
+            <h2>Aktuelle numre på P1 - P6</h2>
+          </div>
+          <div class="now-playing-meta">
+            <span v-if="radioLoading">Opdaterer...</span>
+            <span v-else-if="radioUpdatedAt">Senest opdateret {{ radioUpdatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+          </div>
+        </div>
+
+        <div v-if="radioError" class="radio-error">{{ radioError }}</div>
+
+        <div class="now-playing-grid" v-else>
+          <article v-for="station in radioCards" :key="station.channelSlug" class="now-playing-card">
+            <div class="now-playing-channel">{{ station.channelTitle }}</div>
+            <div class="now-playing-track">{{ station.displayTrack }}</div>
+            <div class="now-playing-program">{{ station.programTitle }}</div>
+          </article>
+        </div>
+      </section>
 
       <section v-if="!isSignedIn" class="form-card">
         <h2>Log ind</h2>
