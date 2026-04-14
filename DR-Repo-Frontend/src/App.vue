@@ -1,16 +1,22 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed, reactive } from 'vue'
-import { getRecords, createRecord, updateRecord, deleteRecord } from './services/RecordsAPI.js'
+import { ref, onMounted, onUnmounted, computed, reactive, watch } from 'vue'
+import { getRecords, getTracks, createRecord, updateRecord, deleteRecord } from './services/RecordsAPI.js'
 import { login, logout } from './services/Auth.js'
 import { getCurrentTrack, getNowPlayingOverview } from './services/RadioAPI.js'
 import './stylesheet.css'
 const records = ref([])
 const loading = ref(true)
 const error = ref(null)
+const tracks = ref([])
+const tracksLoading = ref(false)
+const tracksError = ref(null)
+const tracksUpdatedAt = ref(null)
+const tracksLoaded = ref(false)
 const radioNowPlaying = ref([])
 const radioLoading = ref(true)
 const radioError = ref(null)
 const radioUpdatedAt = ref(null)
+const activeView = ref('albums')
 const authUser = ref(localStorage.getItem('dr-user') || '')
 const token = ref(localStorage.getItem('dr-token') || '')
 const signInName = ref('')
@@ -22,6 +28,9 @@ const filterMinYear = ref(null)
 const filterMaxYear = ref(null)
 const sortBy = ref('id')
 const sortOrder = ref('asc')
+const trackFilterText = ref('')
+const trackSortBy = ref('playedAt')
+const trackSortOrder = ref('desc')
 const showForm = ref(false)
 const editingId = ref(null)
 const radioStations = [
@@ -38,8 +47,30 @@ const emptyForm = () => ({ name: '', artist: '', genre: '', releaseYear: '', tra
 const form = reactive(emptyForm())
 
 const isSignedIn = computed(() => Boolean(token.value))
+const isAlbumsView = computed(() => activeView.value === 'albums')
+const isTracksView = computed(() => activeView.value === 'tracks')
 
 const prettyChannelName = (slug) => `P${slug.replace(/^p/i, '')}`
+
+const displayChannelLabel = (channel) => {
+  if (!channel) return 'UKENDT KANAL'
+  return channel.toUpperCase()
+}
+
+const formatPlayedAt = (value) => {
+  if (!value) return 'Ukendt tidspunkt'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Ukendt tidspunkt'
+
+  return date.toLocaleString('da-DK', {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 const displayTrackTitle = (track, programTitle) => {
   if (!track) return programTitle || 'Ukendt program'
@@ -82,6 +113,33 @@ const filteredAndSortedRecords = computed(() => {
   })
 })
 
+const filteredAndSortedTracks = computed(() => {
+  const text = trackFilterText.value.trim().toLowerCase()
+
+  const filtered = tracks.value.filter((track) => {
+    if (text === '') return true
+
+    const haystacks = [track.name, track.artist, track.channel]
+    return haystacks.some((value) => (value ?? '').toLowerCase().includes(text))
+  })
+
+  return [...filtered].sort((a, b) => {
+    const av = a[trackSortBy.value] ?? ''
+    const bv = b[trackSortBy.value] ?? ''
+
+    let cmp = 0
+    if (trackSortBy.value === 'playedAt') {
+      cmp = new Date(av).getTime() - new Date(bv).getTime()
+    } else if (typeof av === 'string') {
+      cmp = av.localeCompare(bv)
+    } else {
+      cmp = av - bv
+    }
+
+    return trackSortOrder.value === 'asc' ? cmp : -cmp
+  })
+})
+
 function clearAuthState() {
   localStorage.removeItem('dr-token')
   localStorage.removeItem('dr-user')
@@ -105,6 +163,21 @@ async function fetchRecords() {
     }
   } finally {
     loading.value = false
+  }
+}
+
+async function fetchTracks() {
+  tracksLoading.value = true
+  tracksError.value = null
+  try {
+    tracks.value = await getTracks()
+    tracksLoaded.value = true
+    tracksUpdatedAt.value = new Date()
+  } catch (e) {
+    console.error('Error fetching tracks:', e)
+    tracksError.value = 'Failed to load tracks.'
+  } finally {
+    tracksLoading.value = false
   }
 }
 
@@ -160,6 +233,15 @@ async function fetchRadioNowPlaying() {
   }
 }
 
+async function refreshCurrentView() {
+  if (isTracksView.value) {
+    await fetchTracks()
+    return
+  }
+
+  await fetchRecords()
+}
+
 function startRadioPolling() {
   if (radioRefreshTimer) return
   radioRefreshTimer = window.setInterval(() => {
@@ -210,6 +292,10 @@ function clearFilters() {
   filterMaxYear.value = null
 }
 
+function clearTrackFilters() {
+  trackFilterText.value = ''
+}
+
 function setSort(col) {
   if (sortBy.value === col) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
@@ -222,6 +308,24 @@ function setSort(col) {
 function sortIndicator(col) {
   if (sortBy.value !== col) return ''
   return sortOrder.value === 'asc' ? '▲' : '▼'
+}
+
+function trackSortIndicator(col) {
+  if (trackSortBy.value !== col) return ''
+  return trackSortOrder.value === 'asc' ? '▲' : '▼'
+}
+
+function setTrackSort(col) {
+  if (trackSortBy.value === col) {
+    trackSortOrder.value = trackSortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    trackSortBy.value = col
+    trackSortOrder.value = col === 'playedAt' ? 'desc' : 'asc'
+  }
+}
+
+function switchView(view) {
+  activeView.value = view
 }
 
 function openAddForm() {
@@ -282,6 +386,12 @@ async function removeRecord(id) {
   }
 }
 
+watch(activeView, async (view) => {
+  if (view === 'tracks' && !tracksLoaded.value && !tracksLoading.value) {
+    await fetchTracks()
+  }
+})
+
 
 onMounted(() => {
   fetchRadioNowPlaying()
@@ -309,12 +419,16 @@ onUnmounted(() => {
           <div>
             <p class="eyebrow">Danmarks Radio</p>
             <h1>Musikarkiv</h1>
-            <p class="subtitle">Se, filtrer og sorter samlingen</p>
+            <p class="subtitle">Skift mellem albums og tracks uden at miste overblikket</p>
           </div>
         </div>
         <div class="header-actions">
-          <button v-if="isSignedIn" @click="openAddForm" class="btn-ink">+ Tilføj plade</button>
-          <button v-if="isSignedIn" @click="fetchRecords" class="btn-outline">Opdater</button>
+          <div class="segmented view-switch" role="tablist" aria-label="Vælg visning">
+            <button type="button" :class="{ active: isAlbumsView }" @click="switchView('albums')">Albums</button>
+            <button type="button" :class="{ active: isTracksView }" @click="switchView('tracks')">Tracks</button>
+          </div>
+          <button v-if="isSignedIn && isAlbumsView" @click="openAddForm" class="btn-ink">+ Tilføj plade</button>
+          <button v-if="isSignedIn || isTracksView" @click="refreshCurrentView" class="btn-outline">Opdater</button>
           <button v-if="isSignedIn" @click="signOut" class="btn-outline">Log ud</button>
         </div>
       </header>
@@ -342,7 +456,7 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <section v-if="!isSignedIn" class="form-card">
+      <section v-if="isAlbumsView && !isSignedIn" class="form-card">
         <h2>Log ind</h2>
         <div class="form-row">
           <label>Brugernavn<input v-model="signInName" autocomplete="username" /></label>
@@ -354,11 +468,11 @@ onUnmounted(() => {
         <p v-if="authError" class="error-box">{{ authError }}</p>
       </section>
 
-      <section v-else class="session-banner">
+      <section v-else-if="isAlbumsView" class="session-banner">
         Logget ind som <strong>{{ authUser || 'user' }}</strong>
       </section>
 
-      <section v-if="showForm && isSignedIn" class="form-card">
+      <section v-if="isAlbumsView && showForm && isSignedIn" class="form-card">
         <h2>{{ editingId !== null ? 'Rediger plade' : 'Ny plade' }}</h2>
         <form @submit.prevent="submitForm">
           <div class="form-row">
@@ -380,7 +494,7 @@ onUnmounted(() => {
         </form>
       </section>
 
-      <section v-if="isSignedIn" class="control-grid">
+      <section v-if="isAlbumsView && isSignedIn" class="control-grid">
         <label class="control-block">
           <span>Titel eller artist</span>
           <input v-model="filterText" placeholder="Søg i tekst" />
@@ -400,7 +514,7 @@ onUnmounted(() => {
         <button @click="clearFilters" class="btn-clear">Ryd filtre</button>
       </section>
 
-      <section v-if="isSignedIn && !loading && !error" class="sort-row">
+      <section v-if="isAlbumsView && isSignedIn && !loading && !error" class="sort-row">
         <label for="sort-column">Sorter efter</label>
         <select id="sort-column" v-model="sortBy">
           <option value="id">ID</option>
@@ -417,10 +531,10 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <div v-if="isSignedIn && loading" class="loading">Henter plader...</div>
-      <div v-if="error" class="error-box">{{ error }}</div>
+      <div v-if="isAlbumsView && isSignedIn && loading" class="loading">Henter plader...</div>
+      <div v-if="isAlbumsView && error" class="error-box">{{ error }}</div>
 
-      <section class="table-wrap" v-if="isSignedIn && !loading && !error">
+      <section class="table-wrap" v-if="isAlbumsView && isSignedIn && !loading && !error">
         <table>
           <thead>
             <tr>
@@ -452,8 +566,62 @@ onUnmounted(() => {
         </table>
       </section>
 
-      <div v-if="isSignedIn && !loading && !error && filteredAndSortedRecords.length === 0" class="empty-state">
+      <div v-if="isAlbumsView && isSignedIn && !loading && !error && filteredAndSortedRecords.length === 0" class="empty-state">
         Ingen plader fundet
+      </div>
+
+      <section v-if="isTracksView" class="control-grid track-controls">
+        <label class="control-block wide">
+          <span>Søg i tracks</span>
+          <input v-model="trackFilterText" placeholder="Titel, artist eller kanal" />
+        </label>
+        <button @click="clearTrackFilters" class="btn-clear">Ryd filtre</button>
+      </section>
+
+      <section v-if="isTracksView && !tracksLoading && !tracksError" class="sort-row">
+        <label for="track-sort-column">Sorter efter</label>
+        <select id="track-sort-column" v-model="trackSortBy" @change="setTrackSort(trackSortBy)">
+          <option value="id">ID</option>
+          <option value="name">Titel</option>
+          <option value="artist">Artist</option>
+          <option value="channel">Kanal</option>
+          <option value="playedAt">Afspillet</option>
+        </select>
+        <div class="segmented">
+          <button type="button" :class="{ active: trackSortOrder === 'asc' }" @click="trackSortOrder = 'asc'">Asc</button>
+          <button type="button" :class="{ active: trackSortOrder === 'desc' }" @click="trackSortOrder = 'desc'">Desc</button>
+        </div>
+        <span class="table-count">{{ filteredAndSortedTracks.length }} tracks</span>
+      </section>
+
+      <div v-if="isTracksView && tracksLoading" class="loading">Henter tracks...</div>
+      <div v-if="isTracksView && tracksError" class="error-box">{{ tracksError }}</div>
+
+      <section class="table-wrap" v-if="isTracksView && !tracksLoading && !tracksError">
+        <table>
+          <thead>
+            <tr>
+              <th><button type="button" class="th-btn" @click="setTrackSort('id')">ID {{ trackSortIndicator('id') }}</button></th>
+              <th><button type="button" class="th-btn" @click="setTrackSort('name')">Titel {{ trackSortIndicator('name') }}</button></th>
+              <th><button type="button" class="th-btn" @click="setTrackSort('artist')">Artist {{ trackSortIndicator('artist') }}</button></th>
+              <th><button type="button" class="th-btn" @click="setTrackSort('channel')">Kanal {{ trackSortIndicator('channel') }}</button></th>
+              <th><button type="button" class="th-btn" @click="setTrackSort('playedAt')">Afspillet {{ trackSortIndicator('playedAt') }}</button></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="track in filteredAndSortedTracks" :key="track.id">
+              <td>{{ track.id }}</td>
+              <td>{{ track.name }}</td>
+              <td>{{ track.artist }}</td>
+              <td><span class="genre-pill">{{ displayChannelLabel(track.channel) }}</span></td>
+              <td>{{ formatPlayedAt(track.playedAt) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div v-if="isTracksView && !tracksLoading && !tracksError && filteredAndSortedTracks.length === 0" class="empty-state">
+        Ingen tracks fundet
       </div>
     </main>
   </div>

@@ -25,6 +25,16 @@ export const getRecords = async (filters = {}) => {
   }
 };
 
+export const getTracks = async () => {
+  try {
+    const response = await api.get('/tracks');
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching tracks:', error);
+    throw error;
+  }
+};
+
 export const getRecordById = async (id) => {
   try {
     const response = await api.get(`/records/${id}`);

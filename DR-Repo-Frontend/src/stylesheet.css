@@ -92,6 +92,14 @@ body {
   align-items: center;
 }
 
+.view-switch {
+  margin-right: 0.25rem;
+}
+
+.view-switch button {
+  min-width: 4.8rem;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.14em;
@@ -293,6 +301,14 @@ h1 {
   align-items: end;
 }
 
+.track-controls {
+  grid-template-columns: 1fr auto;
+}
+
+.track-controls .wide {
+  grid-column: span 1;
+}
+
 .control-block { display: flex; flex-direction: column; gap: 0.35rem; }
 
 .control-block span {
@@ -336,6 +352,12 @@ h1 {
 }
 
 .sort-row select { min-width: 138px; }
+
+.table-count {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
 
 .segmented {
   display: inline-flex;
