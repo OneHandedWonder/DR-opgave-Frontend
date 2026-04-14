@@ -73,7 +73,11 @@ async function signIn() {
     localStorage.setItem('dr-user', result.username)
     await fetchRecords()
   } catch (e) {
-    authError.value = 'Invalid username or password.'
+    if (e?.response?.status === 401) {
+      authError.value = 'Invalid username or password.'
+    } else {
+      authError.value = 'Failed to sign in. Please try again.'
+    }
   }
 }
 
