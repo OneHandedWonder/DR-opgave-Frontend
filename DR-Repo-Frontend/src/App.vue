@@ -47,6 +47,15 @@ const filteredAndSortedRecords = computed(() => {
   })
 })
 
+function clearAuthState() {
+  localStorage.removeItem('dr-token')
+  localStorage.removeItem('dr-user')
+  token.value = ''
+  authUser.value = ''
+  records.value = []
+  error.value = null
+}
+
 async function fetchRecords() {
   loading.value = true
   error.value = null
@@ -54,11 +63,7 @@ async function fetchRecords() {
     records.value = await getRecords()
   } catch (e) {
     if (e?.response?.status === 401) {
-      localStorage.removeItem('dr-token')
-      localStorage.removeItem('dr-user')
-      token.value = ''
-      authUser.value = ''
-      records.value = []
+      clearAuthState()
       authError.value = 'Your session has expired. Please sign in again.'
     } else {
       error.value = 'Failed to load records.'
@@ -94,12 +99,7 @@ async function signOut() {
   } catch (e) {
     console.error('Error signing out:', e)
   } finally {
-    localStorage.removeItem('dr-token')
-    localStorage.removeItem('dr-user')
-    token.value = ''
-    authUser.value = ''
-    records.value = []
-    error.value = null
+    clearAuthState()
   }
 }
 
