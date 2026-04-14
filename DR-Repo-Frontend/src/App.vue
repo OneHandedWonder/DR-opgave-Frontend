@@ -54,7 +54,12 @@ async function fetchRecords() {
     records.value = await getRecords()
   } catch (e) {
     if (e?.response?.status === 401) {
-      error.value = 'Sign in to load records.'
+      localStorage.removeItem('dr-token')
+      localStorage.removeItem('dr-user')
+      token.value = ''
+      authUser.value = ''
+      records.value = []
+      authError.value = 'Your session has expired. Please sign in again.'
     } else {
       error.value = 'Failed to load records.'
     }
