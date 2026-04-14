@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_AUTH_URL || 'http://localhost:5249/api/auth',
+  baseURL: import.meta.env.VITE_AUTH_BASE_URL || 'http://localhost:5249/api/auth',
 });
 
 export const login = async (username, password) => {
