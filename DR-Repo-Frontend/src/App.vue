@@ -1,11 +1,16 @@
 <script setup>
 import { ref, onMounted, computed, reactive } from 'vue'
 import { getRecords, createRecord, updateRecord, deleteRecord } from './services/RecordsAPI.js'
+import { login, logout } from './services/Auth.js'
 import './stylesheet.css'
-
 const records = ref([])
 const loading = ref(true)
 const error = ref(null)
+const authUser = ref(localStorage.getItem('dr-user') || '')
+const token = ref(localStorage.getItem('dr-token') || '')
+const signInName = ref('admin')
+const signInPassword = ref('admin123')
+const authError = ref(null)
 const filterText = ref('')
 const filterGenre = ref('')
 const filterMinYear = ref(null)
@@ -17,6 +22,8 @@ const editingId = ref(null)
 
 const emptyForm = () => ({ name: '', artist: '', genre: '', releaseYear: '', trackCount: '', duration: '' })
 const form = reactive(emptyForm())
+
+const isSignedIn = computed(() => Boolean(token.value))
 
 const filteredAndSortedRecords = computed(() => {
   const text = filterText.value.trim().toLowerCase()
@@ -46,9 +53,44 @@ async function fetchRecords() {
   try {
     records.value = await getRecords()
   } catch (e) {
-    error.value = 'Failed to load records.'
+    if (e?.response?.status === 401) {
+      error.value = 'Sign in to load records.'
+    } else {
+      error.value = 'Failed to load records.'
+    }
   } finally {
     loading.value = false
+  }
+}
+
+async function signIn() {
+  authError.value = null
+  try {
+    const result = await login(signInName.value, signInPassword.value)
+    token.value = result.token
+    authUser.value = result.username
+    localStorage.setItem('dr-token', result.token)
+    localStorage.setItem('dr-user', result.username)
+    await fetchRecords()
+  } catch (e) {
+    authError.value = 'Invalid username or password.'
+  }
+}
+
+async function signOut() {
+  if (!token.value) return
+
+  try {
+    await logout(token.value)
+  } catch (e) {
+    console.error('Error signing out:', e)
+  } finally {
+    localStorage.removeItem('dr-token')
+    localStorage.removeItem('dr-user')
+    token.value = ''
+    authUser.value = ''
+    records.value = []
+    error.value = null
   }
 }
 
@@ -131,7 +173,14 @@ async function removeRecord(id) {
   }
 }
 
-onMounted(fetchRecords)
+
+onMounted(() => {
+  if (token.value) {
+    fetchRecords()
+  } else {
+    loading.value = false
+  }
+})
 </script>
 
 <template>
@@ -145,12 +194,29 @@ onMounted(fetchRecords)
           <p class="subtitle">Browse, filter, and sort your catalog.</p>
         </div>
         <div class="header-actions">
-          <button @click="openAddForm" class="btn-ink">+ Add Record</button>
-          <button @click="fetchRecords" class="btn-outline">Refresh</button>
+          <button v-if="isSignedIn" @click="openAddForm" class="btn-ink">+ Add Record</button>
+          <button v-if="isSignedIn" @click="fetchRecords" class="btn-outline">Refresh</button>
+          <button v-if="isSignedIn" @click="signOut" class="btn-outline">Sign out</button>
         </div>
       </header>
 
-      <section v-if="showForm" class="form-card">
+      <section v-if="!isSignedIn" class="form-card">
+        <h2>Sign in</h2>
+        <div class="form-row">
+          <label>Username<input v-model="signInName" autocomplete="username" /></label>
+          <label>Password<input v-model="signInPassword" type="password" autocomplete="current-password" /></label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-ink" @click="signIn">Sign in</button>
+        </div>
+        <p v-if="authError" class="error-box">{{ authError }}</p>
+      </section>
+
+      <section v-else class="loading" style="margin-top: 1rem;">
+        Signed in as {{ authUser || 'user' }}
+      </section>
+
+      <section v-if="showForm && isSignedIn" class="form-card">
         <h2>{{ editingId !== null ? 'Edit Record' : 'New Record' }}</h2>
         <form @submit.prevent="submitForm">
           <div class="form-row">
@@ -172,7 +238,7 @@ onMounted(fetchRecords)
         </form>
       </section>
 
-      <section class="control-grid">
+      <section v-if="isSignedIn" class="control-grid">
         <label class="control-block">
           <span>Name or artist</span>
           <input v-model="filterText" placeholder="Search text" />
@@ -192,7 +258,7 @@ onMounted(fetchRecords)
         <button @click="clearFilters" class="btn-clear">Clear filters</button>
       </section>
 
-      <section v-if="!loading && !error" class="sort-row">
+      <section v-if="isSignedIn && !loading && !error" class="sort-row">
         <label for="sort-column">Sort by</label>
         <select id="sort-column" v-model="sortBy">
           <option value="id">ID</option>
@@ -209,10 +275,10 @@ onMounted(fetchRecords)
         </div>
       </section>
 
-      <div v-if="loading" class="loading">Loading records...</div>
+      <div v-if="isSignedIn && loading" class="loading">Loading records...</div>
       <div v-if="error" class="error-box">{{ error }}</div>
 
-      <section class="table-wrap" v-if="!loading && !error">
+      <section class="table-wrap" v-if="isSignedIn && !loading && !error">
         <table>
           <thead>
             <tr>
@@ -244,7 +310,7 @@ onMounted(fetchRecords)
         </table>
       </section>
 
-      <div v-if="!loading && !error && filteredAndSortedRecords.length === 0" class="empty-state">
+      <div v-if="isSignedIn && !loading && !error && filteredAndSortedRecords.length === 0" class="empty-state">
         No records found
       </div>
     </main>
