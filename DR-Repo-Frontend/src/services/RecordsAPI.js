@@ -6,19 +6,9 @@ const api = axios.create({
 
 export const getRecords = async (filters = {}) => {
   try {
-    const params = {};
+    void filters;
 
-    if (filters.containsText && filters.containsText.trim() !== "") {
-      params.containsText = filters.containsText.trim();
-    }
-    if (filters.minPrice !== null && filters.minPrice !== undefined && filters.minPrice !== "") {
-      params.minPrice = filters.minPrice;
-    }
-    if (filters.maxPrice !== null && filters.maxPrice !== undefined && filters.maxPrice !== "") {
-      params.maxPrice = filters.maxPrice;
-    }
-
-    const response = await api.get("/records", { params });
+    const response = await api.get("/records");
     return response.data;
   } catch (error) {
     console.error("Error fetching records:", error);
