@@ -11,6 +11,7 @@ node_modules
 .DS_Store
 dist
 dist-ssr
+.vite
 coverage
 *.local
 
@@ -27,6 +28,10 @@ coverage
 *.tsbuildinfo
 
 .eslintcache
+
+# Recursive build outputs
+**/dist/
+**/coverage/
 
 # Cypress
 /cypress/videos/
