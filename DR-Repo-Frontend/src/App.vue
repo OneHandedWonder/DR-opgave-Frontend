@@ -1,68 +1,118 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed, reactive, watch } from 'vue'
-import { getRecords, getTracks, createRecord, updateRecord, deleteRecord } from './services/RecordsAPI.js'
-import { login, logout } from './services/Auth.js'
-import { getCurrentTrack, getNowPlayingOverview } from './services/RadioAPI.js'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useApiHealth } from './composables/useApiHealth.js'
+import { useAuthRecords } from './composables/useAuthRecords.js'
+import { useRadioPlayer } from './composables/useRadioPlayer.js'
+import { useTracksView } from './composables/useTracksView.js'
 import './stylesheet.css'
-const records = ref([])
-const loading = ref(true)
-const error = ref(null)
-const tracks = ref([])
-const tracksLoading = ref(false)
-const tracksError = ref(null)
-const tracksUpdatedAt = ref(null)
-const tracksLoaded = ref(false)
-const radioNowPlaying = ref([])
-const radioLoading = ref(true)
-const radioError = ref(null)
-const radioUpdatedAt = ref(null)
+
 const activeView = ref('albums')
-const authUser = ref(localStorage.getItem('dr-user') || '')
-const token = ref(localStorage.getItem('dr-token') || '')
-const signInName = ref('')
-const signInPassword = ref('')
-const authError = ref(null)
-const filterText = ref('')
-const filterGenre = ref('')
-const filterMinYear = ref(null)
-const filterMaxYear = ref(null)
-const sortBy = ref('id')
-const sortOrder = ref('asc')
-const trackFilterText = ref('')
-const trackSortBy = ref('playedAt')
-const trackSortOrder = ref('desc')
-const showForm = ref(false)
-const editingId = ref(null)
-const radioStations = [
-  { label: 'P1', slug: 'p1' },
-  { label: 'P2', slug: 'p2' },
-  { label: 'P3', slug: 'p3' },
-  { label: 'P4', slug: 'p4kbh' },
-  { label: 'P5', slug: 'p5kbh' },
-  { label: 'P6', slug: 'p6beat' },
-]
-let radioRefreshTimer = null
-
-const emptyForm = () => ({ name: '', artist: '', genre: '', releaseYear: '', trackCount: '', duration: '' })
-const form = reactive(emptyForm())
-
-const isSignedIn = computed(() => Boolean(token.value))
 const isAlbumsView = computed(() => activeView.value === 'albums')
 const isTracksView = computed(() => activeView.value === 'tracks')
 
-const prettyChannelName = (slug) => `P${slug.replace(/^p/i, '')}`
+const authRecords = useAuthRecords()
+const tracksView = useTracksView()
+const radioPlayer = useRadioPlayer()
+const apiHealth = useApiHealth()
 
-const displayChannelLabel = (channel) => {
-  if (!channel) return 'UKENDT KANAL'
-  return channel.toUpperCase()
-}
+const {
+  records,
+  loading,
+  error,
+  authUser,
+  token,
+  signInName,
+  signInPassword,
+  authError,
+  filterText,
+  filterGenre,
+  filterMinYear,
+  filterMaxYear,
+  sortBy,
+  sortOrder,
+  showForm,
+  editingId,
+  form,
+  isSignedIn,
+  filteredAndSortedRecords,
+  fetchRecords,
+  signIn,
+  signOut,
+  clearFilters,
+  setSort,
+  sortIndicator,
+  openAddForm,
+  openEditForm,
+  cancelForm,
+  submitForm,
+  removeRecord,
+} = authRecords
 
-const formatPlayedAt = (value) => {
-  if (!value) return 'Ukendt tidspunkt'
+const {
+  tracks,
+  tracksLoading,
+  tracksError,
+  tracksUpdatedAt,
+  tracksLoaded,
+  trackFilterText,
+  trackSortBy,
+  trackSortOrder,
+  filteredAndSortedTracks,
+  fetchTracks,
+  clearTrackFilters,
+  trackSortIndicator,
+  setTrackSort,
+  displayChannelLabel,
+  formatPlayedAt,
+} = tracksView
+
+const {
+  radioNowPlaying,
+  radioLoading,
+  radioError,
+  radioUpdatedAt,
+  radioPlaybackError,
+  listeningStationSlug,
+  isStationPlaying,
+  radioVolume,
+  radioMuted,
+  radioCards,
+  currentListeningStation,
+  canListenToStation,
+  listenButtonLabel,
+  fetchRadioNowPlaying,
+  toggleStationPlayback,
+  toggleGlobalPlayback,
+  stopPlayback,
+  setRadioVolume,
+  toggleMute,
+  startRadioPolling,
+  stopRadioPolling,
+  initializeAudio,
+  disposeAudio,
+} = radioPlayer
+
+const {
+  apiHealthStatus,
+  apiHealthCheckedAt,
+  apiHealthDetails,
+  isHealthDrawerOpen,
+  apiHealthLabel,
+  apiHealthClass,
+  healthChecks,
+  healthTables,
+  fetchApiHealthStatus,
+  toggleHealthDrawer,
+  closeHealthDrawer,
+  startHealthPolling,
+  stopHealthPolling,
+} = apiHealth
+
+function formatHealthTimestamp(value) {
+  if (!value) return 'N/A'
 
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Ukendt tidspunkt'
-
+  if (Number.isNaN(date.getTime())) return 'N/A'
   return date.toLocaleString('da-DK', {
     year: 'numeric',
     month: 'short',
@@ -72,165 +122,8 @@ const formatPlayedAt = (value) => {
   })
 }
 
-const displayTrackTitle = (track, programTitle) => {
-  if (!track) return programTitle || 'Ukendt program'
-  return track.replace(/^\/?\s*/, '').trim()
-}
-
-const radioCards = computed(() => {
-  return radioStations.map((station) => {
-    const item = radioNowPlaying.value.find((entry) => entry.channelSlug === station.slug)
-    return {
-      channelSlug: station.slug,
-      channelTitle: station.label,
-      programTitle: item?.programTitle || 'Ukendt program',
-      currentTrack: item?.currentTrack || null,
-      displayTrack: displayTrackTitle(item?.currentTrack, item?.programTitle),
-      matchedMetadata: item?.matchedMetadata || null,
-    }
-  })
-})
-
-const filteredAndSortedRecords = computed(() => {
-  const text = filterText.value.trim().toLowerCase()
-  const genre = filterGenre.value.trim().toLowerCase()
-  const minYear = filterMinYear.value
-  const maxYear = filterMaxYear.value
-
-  const filtered = records.value.filter((r) => {
-    const matchesText = text === '' || (r.name ?? '').toLowerCase().includes(text) || (r.artist ?? '').toLowerCase().includes(text)
-    const matchesGenre = genre === '' || (r.genre ?? '').toLowerCase().includes(genre)
-    const matchesMin = minYear == null || r.releaseYear >= minYear
-    const matchesMax = maxYear == null || r.releaseYear <= maxYear
-    return matchesText && matchesGenre && matchesMin && matchesMax
-  })
-
-  return [...filtered].sort((a, b) => {
-    const av = a[sortBy.value] ?? ''
-    const bv = b[sortBy.value] ?? ''
-    const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv
-    return sortOrder.value === 'asc' ? cmp : -cmp
-  })
-})
-
-const filteredAndSortedTracks = computed(() => {
-  const text = trackFilterText.value.trim().toLowerCase()
-
-  const filtered = tracks.value.filter((track) => {
-    if (text === '') return true
-
-    const haystacks = [track.name, track.artist, track.channel]
-    return haystacks.some((value) => (value ?? '').toLowerCase().includes(text))
-  })
-
-  return [...filtered].sort((a, b) => {
-    const av = a[trackSortBy.value] ?? ''
-    const bv = b[trackSortBy.value] ?? ''
-
-    let cmp = 0
-    if (trackSortBy.value === 'playedAt') {
-      cmp = new Date(av).getTime() - new Date(bv).getTime()
-    } else if (typeof av === 'string') {
-      cmp = av.localeCompare(bv)
-    } else {
-      cmp = av - bv
-    }
-
-    return trackSortOrder.value === 'asc' ? cmp : -cmp
-  })
-})
-
-function clearAuthState() {
-  localStorage.removeItem('dr-token')
-  localStorage.removeItem('dr-user')
-  token.value = ''
-  authUser.value = ''
-  records.value = []
-  error.value = null
-}
-
-async function fetchRecords() {
-  loading.value = true
-  error.value = null
-  try {
-    records.value = await getRecords()
-  } catch (e) {
-    if (e?.response?.status === 401) {
-      clearAuthState()
-      authError.value = 'Your session has expired. Please sign in again.'
-    } else {
-      error.value = 'Failed to load records.'
-    }
-  } finally {
-    loading.value = false
-  }
-}
-
-async function fetchTracks() {
-  tracksLoading.value = true
-  tracksError.value = null
-  try {
-    tracks.value = await getTracks()
-    tracksLoaded.value = true
-    tracksUpdatedAt.value = new Date()
-  } catch (e) {
-    console.error('Error fetching tracks:', e)
-    tracksError.value = 'Failed to load tracks.'
-  } finally {
-    tracksLoading.value = false
-  }
-}
-
-async function fetchRadioNowPlaying() {
-  radioLoading.value = true
-  radioError.value = null
-  try {
-    const overview = await getNowPlayingOverview()
-    const overviewMap = new Map(
-      overview.map((item) => [item.channelSlug, item]),
-    )
-
-    const settled = await Promise.allSettled(
-      radioStations.map(async (station) => {
-        const base = overviewMap.get(station.slug)
-        const data = await getCurrentTrack(station.slug)
-        return {
-          channelSlug: station.slug,
-          channelTitle: data?.channelTitle || base?.channelTitle || station.label,
-          programTitle: data?.programTitle || base?.nowPlaying?.title || base?.programTitle || 'Ukendt program',
-          currentTrack: data?.currentTrack || null,
-          matchedMetadata: data?.matchedMetadata || null,
-        }
-      }),
-    )
-
-    const results = settled.map((result, index) => {
-      const station = radioStations[index]
-      const channelSlug = station.slug
-      const base = overviewMap.get(channelSlug)
-
-      if (result.status === 'fulfilled') {
-        return result.value
-      }
-
-      console.error(`Error fetching radio data for ${channelSlug}:`, result.reason)
-      return {
-        channelSlug,
-        channelTitle: base?.channelTitle || station.label,
-        programTitle: base?.nowPlaying?.title || 'Ukendt program',
-        currentTrack: null,
-        matchedMetadata: null,
-      }
-    })
-
-    radioNowPlaying.value = results
-    radioUpdatedAt.value = new Date()
-  } catch (e) {
-    radioError.value = 'Kunne ikke hente aktuelle numre fra DR.'
-    console.error('Error fetching radio now playing:', e)
-  } finally {
-    radioLoading.value = false
-  }
+function switchView(view) {
+  activeView.value = view
 }
 
 async function refreshCurrentView() {
@@ -242,160 +135,19 @@ async function refreshCurrentView() {
   await fetchRecords()
 }
 
-function startRadioPolling() {
-  if (radioRefreshTimer) return
-  radioRefreshTimer = window.setInterval(() => {
-    fetchRadioNowPlaying()
-  }, 120000)
-}
-
-function stopRadioPolling() {
-  if (!radioRefreshTimer) return
-  window.clearInterval(radioRefreshTimer)
-  radioRefreshTimer = null
-}
-
-async function signIn() {
-  authError.value = null
-  try {
-    const result = await login(signInName.value, signInPassword.value)
-    token.value = result.token
-    authUser.value = result.username
-    localStorage.setItem('dr-token', result.token)
-    localStorage.setItem('dr-user', result.username)
-    await fetchRecords()
-  } catch (e) {
-    if (e?.response?.status === 401) {
-      authError.value = 'Invalid username or password.'
-    } else {
-      authError.value = 'Failed to sign in. Please try again.'
-    }
-  }
-}
-
-async function signOut() {
-  if (!token.value) return
-
-  try {
-    await logout(token.value)
-  } catch (e) {
-    console.error('Error signing out:', e)
-  } finally {
-    clearAuthState()
-  }
-}
-
-function clearFilters() {
-  filterText.value = ''
-  filterGenre.value = ''
-  filterMinYear.value = null
-  filterMaxYear.value = null
-}
-
-function clearTrackFilters() {
-  trackFilterText.value = ''
-}
-
-function setSort(col) {
-  if (sortBy.value === col) {
-    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    sortBy.value = col
-    sortOrder.value = 'asc'
-  }
-}
-
-function sortIndicator(col) {
-  if (sortBy.value !== col) return ''
-  return sortOrder.value === 'asc' ? '▲' : '▼'
-}
-
-function trackSortIndicator(col) {
-  if (trackSortBy.value !== col) return ''
-  return trackSortOrder.value === 'asc' ? '▲' : '▼'
-}
-
-function setTrackSort(col) {
-  if (trackSortBy.value === col) {
-    trackSortOrder.value = trackSortOrder.value === 'asc' ? 'desc' : 'asc'
-  } else {
-    trackSortBy.value = col
-    trackSortOrder.value = col === 'playedAt' ? 'desc' : 'asc'
-  }
-}
-
-function switchView(view) {
-  activeView.value = view
-}
-
-function openAddForm() {
-  Object.assign(form, emptyForm())
-  editingId.value = null
-  showForm.value = true
-}
-
-function openEditForm(record) {
-  Object.assign(form, {
-    name: record.name,
-    artist: record.artist,
-    genre: record.genre,
-    releaseYear: record.releaseYear,
-    trackCount: record.trackCount,
-    duration: record.duration,
-  })
-  editingId.value = record.id
-  showForm.value = true
-}
-
-function cancelForm() {
-  showForm.value = false
-  editingId.value = null
-}
-
-async function submitForm() {
-  const payload = {
-    name: form.name,
-    artist: form.artist,
-    genre: form.genre,
-    releaseYear: Number(form.releaseYear),
-    trackCount: Number(form.trackCount),
-    duration: Number(form.duration),
-  }
-  try {
-    if (editingId.value !== null) {
-      const updated = await updateRecord(editingId.value, payload)
-      const i = records.value.findIndex((r) => r.id === editingId.value)
-      if (i !== -1) records.value[i] = updated
-    } else {
-      const created = await createRecord(payload)
-      records.value.push(created)
-    }
-    cancelForm()
-  } catch (e) {
-    console.error('Error saving record:', e)
-  }
-}
-
-async function removeRecord(id) {
-  if (!confirm('Delete this record?')) return
-  try {
-    await deleteRecord(id)
-    records.value = records.value.filter((r) => r.id !== id)
-  } catch (e) {
-    console.error('Error deleting record:', e)
-  }
-}
-
 watch(activeView, async (view) => {
   if (view === 'tracks' && !tracksLoaded.value && !tracksLoading.value) {
     await fetchTracks()
   }
 })
 
-
 onMounted(() => {
+  initializeAudio()
+
   fetchRadioNowPlaying()
+  fetchApiHealthStatus()
   startRadioPolling()
+  startHealthPolling()
 
   if (token.value) {
     fetchRecords()
@@ -405,7 +157,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposeAudio()
   stopRadioPolling()
+  stopHealthPolling()
 })
 </script>
 
@@ -423,6 +177,18 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="header-actions">
+          <button
+            type="button"
+            class="api-health-pill"
+            :class="apiHealthClass"
+            @click="toggleHealthDrawer"
+            :aria-expanded="isHealthDrawerOpen"
+            aria-controls="health-drawer"
+          >
+            <span class="dot"></span>
+            <span>{{ apiHealthLabel }}</span>
+            <span v-if="apiHealthCheckedAt" class="time">{{ apiHealthCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+          </button>
           <div class="segmented view-switch" role="tablist" aria-label="Vælg visning">
             <button type="button" :class="{ active: isAlbumsView }" @click="switchView('albums')">Albums</button>
             <button type="button" :class="{ active: isTracksView }" @click="switchView('tracks')">Tracks</button>
@@ -432,6 +198,64 @@ onUnmounted(() => {
           <button v-if="isSignedIn" @click="signOut" class="btn-outline">Log ud</button>
         </div>
       </header>
+
+      <section v-if="isHealthDrawerOpen" id="health-drawer" class="health-drawer" aria-label="API sundhedsdetaljer">
+        <div class="health-drawer-header">
+          <h2>API Sundhed</h2>
+          <div class="health-drawer-actions">
+            <button type="button" class="btn-outline" @click="fetchApiHealthStatus">Opdater</button>
+            <button type="button" class="btn-outline" @click="closeHealthDrawer">Luk</button>
+          </div>
+        </div>
+
+        <div class="health-summary-grid">
+          <article class="health-summary-card">
+            <h3>Status</h3>
+            <p>{{ apiHealthStatus }}</p>
+          </article>
+          <article class="health-summary-card">
+            <h3>Sidst tjekket</h3>
+            <p>{{ apiHealthCheckedAt ? apiHealthCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A' }}</p>
+          </article>
+          <article class="health-summary-card">
+            <h3>Total varighed</h3>
+            <p>{{ apiHealthDetails?.totalDurationMs != null ? `${Math.round(apiHealthDetails.totalDurationMs)} ms` : 'N/A' }}</p>
+          </article>
+        </div>
+
+        <div class="health-grid">
+          <div class="health-card">
+            <h3>Checks</h3>
+            <div v-if="healthChecks.length === 0" class="health-empty">Ingen checks fundet.</div>
+            <ul v-else class="health-list">
+              <li v-for="item in healthChecks" :key="item.name" class="health-list-item">
+                <div class="health-list-title">{{ item.name }}</div>
+                <div class="health-list-meta">
+                  <span class="badge" :class="item.statusClass">{{ item.status }}</span>
+                  <span>{{ item.durationMs != null ? `${Math.round(item.durationMs)} ms` : 'N/A' }}</span>
+                </div>
+                <p v-if="item.description" class="health-desc">{{ item.description }}</p>
+              </li>
+            </ul>
+          </div>
+
+          <div class="health-card">
+            <h3>Tabeller</h3>
+            <div v-if="healthTables.length === 0" class="health-empty">Ingen tabeldata fundet.</div>
+            <ul v-else class="health-list">
+              <li v-for="table in healthTables" :key="table.name" class="health-list-item">
+                <div class="health-list-title">{{ table.name }}</div>
+                <div class="health-list-meta">
+                  <span class="badge" :class="table.statusClass">{{ table.status }}</span>
+                  <span>Rows: {{ table.rowCount ?? 'N/A' }}</span>
+                </div>
+                <p class="health-desc">Newest: {{ formatHealthTimestamp(table.newestRowTimestampUtc) }}</p>
+                <p v-if="table.error" class="health-error">{{ table.error }}</p>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
 
       <section class="now-playing-banner" aria-label="Aktuelt på DR">
         <div class="now-playing-header">
@@ -446,12 +270,49 @@ onUnmounted(() => {
         </div>
 
         <div v-if="radioError" class="radio-error">{{ radioError }}</div>
+        <div v-if="radioPlaybackError" class="radio-error">{{ radioPlaybackError }}</div>
 
-        <div class="now-playing-grid" v-else>
+        <div v-if="currentListeningStation" class="audio-control-bar" role="group" aria-label="Lydkontrol">
+          <div class="audio-control-meta">
+            <p class="audio-control-kicker">Afspiller nu</p>
+            <p class="audio-control-station">{{ currentListeningStation.channelTitle }}</p>
+          </div>
+          <div class="audio-control-actions">
+            <button type="button" class="btn-outline" @click="toggleGlobalPlayback">
+              {{ isStationPlaying ? 'Pause' : 'Afspil' }}
+            </button>
+            <button type="button" class="btn-outline" @click="stopPlayback">Stop</button>
+            <button type="button" class="btn-outline" @click="toggleMute">{{ radioMuted ? 'Unmute' : 'Mute' }}</button>
+            <label class="volume-wrap" for="live-volume">
+              Lyd
+              <input
+                id="live-volume"
+                type="range"
+                min="0"
+                max="100"
+                :value="radioVolume"
+                @input="setRadioVolume($event.target.value)"
+              />
+              <span>{{ radioVolume }}%</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="now-playing-grid">
           <article v-for="station in radioCards" :key="station.channelSlug" class="now-playing-card">
             <div class="now-playing-channel">{{ station.channelTitle }}</div>
             <div class="now-playing-track">{{ station.displayTrack }}</div>
             <div class="now-playing-program">{{ station.programTitle }}</div>
+            <div class="now-playing-actions">
+              <button
+                type="button"
+                class="btn-outline listen-btn"
+                :disabled="!canListenToStation(station)"
+                @click="toggleStationPlayback(station)"
+              >
+                {{ listenButtonLabel(station) }}
+              </button>
+            </div>
           </article>
         </div>
       </section>
