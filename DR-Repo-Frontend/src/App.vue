@@ -145,7 +145,7 @@ onMounted(fetchRecords)
           <p class="subtitle">Browse, filter, and sort your catalog.</p>
         </div>
         <div class="header-actions">
-          <button @click="openAddForm" class="btn-ink">+ Add Record</button>
+          <button id="create-record-button" @click="openAddForm" class="btn-ink">+ Add Record</button>
           <button @click="fetchRecords" class="btn-outline">Refresh</button>
         </div>
       </header>
@@ -236,8 +236,8 @@ onMounted(fetchRecords)
               <td>{{ record.trackCount }}</td>
               <td>{{ record.duration }}</td>
               <td class="row-actions">
-                <button class="btn-edit" @click="openEditForm(record)">Edit</button>
-                <button class="btn-delete" @click="removeRecord(record.id)">Delete</button>
+                <button class="btn-edit edit-record-button" @click="openEditForm(record)">Edit</button>
+                <button class="btn-delete delete-record-button" @click="removeRecord(record.id)">Delete</button>
               </td>
             </tr>
           </tbody>
