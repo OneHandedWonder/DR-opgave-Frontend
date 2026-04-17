@@ -403,7 +403,7 @@ onUnmounted(() => {
               <td>{{ record.name }}</td>
               <td>{{ record.releaseYear }}</td>
               <td>{{ record.artist }}</td>
-              <td><span class="genre-pill">{{ record.genre }}</span></td>
+              <td><span class="genre-pill" :class="`genre-pill--${(record.genre ?? '').toLowerCase().replace(/[\s\/]+/g, '').replace('hip-hop','hiphop')}`">{{ record.genre }}</span></td>
               <td>{{ record.trackCount }}</td>
               <td>{{ record.duration }}</td>
               <td class="row-actions">

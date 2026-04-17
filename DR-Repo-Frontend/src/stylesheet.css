@@ -716,6 +716,22 @@ tbody tr:hover { background: #f8f9fb; }
   font-weight: 700;
 }
 
+/* Per-genre colors */
+.genre-pill--rock       { background: #fde8cc; color: #7a3a00; }
+.genre-pill--pop        { background: #fce4f3; color: #831259; }
+.genre-pill--jazz       { background: #dce8ff; color: #1a3a7a; }
+.genre-pill--klassisk   { background: #e8e0ff; color: #3b1f8c; }
+.genre-pill--hiphop     { background: #e0f0e0; color: #1a5c1a; }
+.genre-pill--elektronisk{ background: #d6f4ff; color: #005f7a; }
+.genre-pill--metal      { background: #e4e4e4; color: #1c1c1c; }
+.genre-pill--folk       { background: #f5f0dc; color: #5a4200; }
+.genre-pill--blues      { background: #d8e8f8; color: #0d3260; }
+.genre-pill--soul       { background: #fff0d8; color: #7a4a00; }
+.genre-pill--country    { background: #f2ead8; color: #5a3c00; }
+.genre-pill--reggae     { background: #d8f5e0; color: #0d5c28; }
+.genre-pill--latin      { background: #fff0cc; color: #7a4e00; }
+.genre-pill--punk       { background: #ffe0e0; color: #7a1010; }
+
 .row-actions { display: flex; gap: 0.35rem; justify-content: center; }
 
 .btn-edit {
