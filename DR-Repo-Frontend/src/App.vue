@@ -177,25 +177,13 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="header-actions">
-          <button
-            type="button"
-            class="api-health-pill"
-            :class="apiHealthClass"
-            @click="toggleHealthDrawer"
-            :aria-expanded="isHealthDrawerOpen"
-            aria-controls="health-drawer"
-          >
-            <span class="dot"></span>
-            <span>{{ apiHealthLabel }}</span>
-            <span v-if="apiHealthCheckedAt" class="time">{{ apiHealthCheckedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
-          </button>
-          <div class="segmented view-switch" role="tablist" aria-label="Vælg visning">
-            <button type="button" :class="{ active: isAlbumsView }" @click="switchView('albums')">Albums</button>
-            <button type="button" :class="{ active: isTracksView }" @click="switchView('tracks')">Tracks</button>
-          </div>
-          <button v-if="isSignedIn && isAlbumsView" @click="openAddForm" class="btn-ink">+ Tilføj plade</button>
-          <button v-if="isSignedIn || isTracksView" @click="refreshCurrentView" class="btn-outline">Opdater</button>
+          <button id="create-record-button" v-if="isSignedIn" @click="openAddForm" class="btn-ink">+ Tilføj plade</button>
+          <button v-if="isSignedIn" @click="fetchRecords" class="btn-outline">Opdater</button>
           <button v-if="isSignedIn" @click="signOut" class="btn-outline">Log ud</button>
+          <!-- Previous variant kept for reference:
+          <button id="create-record-button" @click="openAddForm" class="btn-ink">+ Add Record</button>
+          <button @click="fetchRecords" class="btn-outline">Refresh</button>
+          -->
         </div>
       </header>
 
@@ -419,8 +407,12 @@ onUnmounted(() => {
               <td>{{ record.trackCount }}</td>
               <td>{{ record.duration }}</td>
               <td class="row-actions">
-                <button class="btn-edit" @click="openEditForm(record)">Rediger</button>
-                <button class="btn-delete" @click="removeRecord(record.id)">Slet</button>
+                <button class="btn-edit edit-record-button" @click="openEditForm(record)">Rediger</button>
+                <button class="btn-delete delete-record-button" @click="removeRecord(record.id)">Slet</button>
+                <!-- Previous variant kept for reference:
+                <button class="btn-edit edit-record-button" @click="openEditForm(record)">Edit</button>
+                <button class="btn-delete delete-record-button" @click="removeRecord(record.id)">Delete</button>
+                -->
               </td>
             </tr>
           </tbody>
